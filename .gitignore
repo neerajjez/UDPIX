@@ -1,0 +1,42 @@
+# Rust build artifacts
+target/
+**/*.rs.bk
+*.pdb
+
+# Python artifacts
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+
+
+Research/
+scripts/
+refernces/
+logs/
+graph/
+context/
+
+# Claude Code internal session/cache files
+.claude/memory/
+.claude/todos/
+.claude/cache/
+.claude/.session*
+
+# Editor and OS artifacts
+.DS_Store
+.idea/
+.vscode/settings.json
+*.swp
+*.swo
+*~
+Thumbs.db
+
+# Temp/runtime artifacts
+*.log
+*.tmp
+*.temp

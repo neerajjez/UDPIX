@@ -1,0 +1,17 @@
+[package]
+name        = "udpix-ioengine"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+udpix-common        = { path = "../common" }
+udpix-protocol      = { path = "../protocol" }
+tokio.workspace     = true
+io-uring.workspace  = true
+libc.workspace      = true
+bytes.workspace     = true
+tracing.workspace   = true
+anyhow.workspace    = true
+thiserror.workspace = true

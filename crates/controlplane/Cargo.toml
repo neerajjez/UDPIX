@@ -1,0 +1,28 @@
+[package]
+name        = "udpix-controlplane"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+udpix-common        = { path = "../common" }
+udpix-protocol      = { path = "../protocol" }
+tonic.workspace     = true
+prost.workspace     = true
+tokio.workspace     = true
+rustls.workspace    = true
+rustls-pemfile.workspace = true
+pbkdf2.workspace    = true
+sha2.workspace      = true
+rand.workspace      = true
+jsonwebtoken.workspace = true
+uuid.workspace      = true
+serde.workspace     = true
+serde_json.workspace = true
+tracing.workspace   = true
+anyhow.workspace    = true
+thiserror.workspace = true
+
+[build-dependencies]
+tonic-build = "0.12"

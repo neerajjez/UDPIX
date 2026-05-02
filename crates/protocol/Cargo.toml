@@ -1,0 +1,19 @@
+[package]
+name        = "udpix-protocol"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+udpix-common        = { path = "../common" }
+tokio.workspace     = true
+nix.workspace       = true
+libc.workspace      = true
+bytes.workspace     = true
+crossbeam-channel.workspace = true
+parking_lot.workspace = true
+serde.workspace     = true
+tracing.workspace   = true
+anyhow.workspace    = true
+thiserror.workspace = true

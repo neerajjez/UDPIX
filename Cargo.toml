@@ -1,0 +1,61 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/common",
+    "crates/protocol",
+    "crates/ioengine",
+    "crates/controlplane",
+    "crates/traversal",
+]
+
+[workspace.package]
+version     = "0.1.0"
+edition     = "2021"
+authors     = ["UDPix Contributors"]
+license     = "MIT OR Apache-2.0"
+repository  = "https://github.com/neerajjes/udpix"
+
+[workspace.dependencies]
+# Async runtime
+tokio        = { version = "1",    features = ["full"] }
+
+# gRPC control plane
+tonic        = "0.12"
+prost        = "0.13"
+
+# Cryptography
+aes-gcm      = "0.10"
+pbkdf2       = { version = "0.12", features = ["simple"] }
+sha2         = "0.10"
+rand         = "0.8"
+zeroize      = "1"
+
+# TLS
+rustls       = "0.23"
+rustls-pemfile = "2"
+
+# Linux network / disk I/O
+nix          = { version = "0.29", features = ["net", "socket", "uio"] }
+io-uring     = "0.7"
+libc         = "0.2"
+
+# Serialization
+serde        = { version = "1",    features = ["derive"] }
+serde_json   = "1"
+bytes        = "1"
+
+# Concurrency
+crossbeam-channel = "0.5"
+parking_lot  = "1"
+
+# JWT / sessions
+jsonwebtoken = "9"
+uuid         = { version = "1",    features = ["v4"] }
+
+# Observability
+tracing      = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Error handling
+anyhow       = "1"
+thiserror    = "1"

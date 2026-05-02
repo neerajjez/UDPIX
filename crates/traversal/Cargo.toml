@@ -1,0 +1,16 @@
+[package]
+name        = "udpix-traversal"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+udpix-common        = { path = "../common" }
+udpix-protocol      = { path = "../protocol" }
+tokio.workspace     = true
+bytes.workspace     = true
+rand.workspace      = true
+tracing.workspace   = true
+anyhow.workspace    = true
+thiserror.workspace = true
