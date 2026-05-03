@@ -9,5 +9,25 @@
 ///   - `Crypto(...)` — encryption/decryption failures (wrong key, bad tag)
 ///   - `Auth(...)` — authentication / authorization rejections
 ///   - `Traversal(...)` — NAT traversal negotiation failures
+#[derive(Debug)]
+pub enum UdpixError {
+    Io(std::io::Error),
+    Protocol(String),
+    Crypto(String),
+    Auth(String),
+    Traversal(String),
+}
 
-// TODO(phase-1): Define UdpixError with thiserror #[derive(Error)]
+impl std::fmt::Display for UdpixError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Io(e)         => write!(f, "io: {e}"),
+            Self::Protocol(s)   => write!(f, "protocol: {s}"),
+            Self::Crypto(s)     => write!(f, "crypto: {s}"),
+            Self::Auth(s)       => write!(f, "auth: {s}"),
+            Self::Traversal(s)  => write!(f, "traversal: {s}"),
+        }
+    }
+}
+
+impl std::error::Error for UdpixError {}

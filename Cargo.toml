@@ -46,7 +46,8 @@ bytes        = "1"
 
 # Concurrency
 crossbeam-channel = "0.5"
-parking_lot  = "1"
+crossbeam-queue   = "0.3"
+parking_lot  = "0.12"
 
 # JWT / sessions
 jsonwebtoken = "9"

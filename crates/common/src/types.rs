@@ -15,7 +15,14 @@
 ///              measurement. Sender writes current time; receiver echoes it
 ///              back in the ACK so the sender can compute round-trip time.
 
-// TODO(phase-1): Define these as newtype wrappers, e.g.:
-//   pub struct SessionId(pub u32);
-//   pub struct SequenceNumber(pub u64);
-//   pub struct Timestamp(pub u64);  // microseconds since Unix epoch
+/// 32-bit session identifier assigned by the control plane.
+pub struct SessionId(pub u32);
+
+/// UUID v4 transfer identifier for resumable transfers.
+pub struct TransferId(pub u128);
+
+/// Sequential 64-bit block identifier produced by the ioengine.
+pub struct BlockId(pub u64);
+
+/// Microsecond-precision Unix timestamp used in packet headers.
+pub struct Timestamp(pub u64);

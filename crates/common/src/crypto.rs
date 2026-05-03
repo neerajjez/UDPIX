@@ -9,7 +9,5 @@
 /// The session key itself is generated fresh per transfer by the control plane
 /// (gRPC server) and delivered to both peers over TLS 1.3 — it never travels
 /// over the UDP data channel.
-
-// TODO(phase-3): Implement encrypt(key, seq, plaintext) -> Vec<u8>
-//                and decrypt(key, seq, ciphertext) -> Result<Vec<u8>>
-//                using the `aes-gcm` crate.
+// Phase 3: implement encrypt/decrypt using the `aes-gcm` crate.
+pub mod crypto {}
