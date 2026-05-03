@@ -100,7 +100,7 @@ cargo run --bin udpix-client -- send /path/to/large-file server-host:9000
 ## Roadmap
 
 - [x] Phase 0 — Project initialization, workspace structure
-- [ ] Phase 1 — Custom RUDP protocol engine (packet format, congestion control, SACK/NAK, sendmmsg/recvmmsg)
+- [x] Phase 1 — Custom RUDP protocol engine (packet format, congestion control, SACK/NAK, sendmmsg/recvmmsg)
 - [ ] Phase 2 — io_uring storage engine (async disk I/O, small-file packing, zero-copy)
 - [ ] Phase 3 — gRPC control plane (TLS 1.3, PBKDF2 auth, session key exchange)
 - [ ] Phase 4 — NAT traversal (STUN/TURN/ICE, UDP hole punching, rendezvous server)
@@ -119,5 +119,37 @@ UDPix is community-built. PRs, issues, and architectural discussions are welcome
 Licensed under either of [MIT](LICENSE-MIT) or [Apache-2.0](LICENSE-APACHE) at your option.
 
 ---
+
+---
+
+## A Note from the Author
+
+*Yeah, I'll be honest with you.*
+
+I'm a **systems/infrastructure engineer** — the kind of person who has spent years staring at dashboards at 2 AM wondering why a 4 TB genomics dataset is still at 12% after three hours, or why a directory of 6 million small configuration files takes longer to rsync than it does to regenerate from scratch.
+I've watched TCP collapse on high-latency WAN links so many times I've started taking it personally.
+I've rage-opened Wireshark to watch a theoretically-gigabit fiber link crawl at 3 Mbps because the congestion window decided today was a great day to be conservative.
+I've been on calls with vendors selling "enterprise file transfer solutions" priced like a luxury car, listened to them explain the magic of their proprietary UDP acceleration with straight faces, and quietly wondered how hard it could really be.
+
+Spoiler: *hard enough that I kept paying the enterprise license.*
+
+**What I am not** is a software developer in any traditional sense.
+I have never written production Rust before this project.
+I couldn't tell you from memory what a lifetime annotation does without Googling it.
+The phrase "borrow checker" used to trigger a mild stress response.
+Low-level network programming? I know it exists in the same way I know surgery exists — I understand the concept, I respect the craft, and I would not attempt either without supervision.
+
+What I *do* know is infrastructure and cloud — deeply, operationally, at the "it's 3 AM and the datacenter is on fire" level.
+I know what breaks, why it breaks, and what the thing that fixes it needs to do.
+I have opinions about UDP batch syscall overhead that I probably shouldn't be allowed to have given my job title.
+
+So I did what any self-respecting infrastructure nerd with too much free time and access to an AI coding assistant would do:
+I wrote the design document, argued about protocol semantics with an AI until 1 AM, and then watched Claude Code produce Rust I could not have written myself in a month — while I provided the operational intuition about *why* 22% packet loss is a Tuesday, not a crisis.
+
+This is **vibe coding** at its most sincere.
+I have taken enormous amounts from the open source community over my career — every tool I've ever relied on, every problem that was already solved before I had to solve it.
+This is my attempt to give something back: not perfect code, not a production-ready release, but a serious, well-documented, architecturally-sound foundation for something the community actually needs.
+
+If you're a real Rust engineer and you're reading this source thinking "who wrote this" — hello, that's me, and I am so sorry, and also please open a PR.
 
 *Vibecoded by [@neerajjez](https://github.com/neerajjez) with the help of [Claude Code](https://claude.ai/code)*
