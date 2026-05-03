@@ -16,13 +16,17 @@
 ///              back in the ACK so the sender can compute round-trip time.
 
 /// 32-bit session identifier assigned by the control plane.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct SessionId(pub u32);
 
 /// UUID v4 transfer identifier for resumable transfers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct TransferId(pub u128);
 
-/// Sequential 64-bit block identifier produced by the ioengine.
+/// Sequential 64-bit block identifier produced by the ioengine packer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct BlockId(pub u64);
 
 /// Microsecond-precision Unix timestamp used in packet headers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Timestamp(pub u64);

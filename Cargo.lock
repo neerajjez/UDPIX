@@ -1700,6 +1700,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "bytes",
+ "crossbeam-channel",
  "io-uring",
  "libc",
  "thiserror 1.0.69",
