@@ -11,6 +11,11 @@ udpix-protocol      = { path = "../protocol" }
 tokio.workspace     = true
 bytes.workspace     = true
 rand.workspace      = true
+nix.workspace       = true
+socket2.workspace   = true
+hmac.workspace      = true
+sha1.workspace      = true
+md5.workspace       = true
 tracing.workspace   = true
 anyhow.workspace    = true
 thiserror.workspace = true

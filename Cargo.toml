@@ -38,6 +38,12 @@ rustls-pemfile = "2"
 nix          = { version = "0.29", features = ["net", "socket", "uio"] }
 io-uring     = "0.7"
 libc         = "0.2"
+socket2      = { version = "0.5", features = ["all"] }
+
+# NAT traversal crypto (TURN HMAC-SHA1 + MD5 key derivation)
+hmac         = "0.12"
+sha1         = "0.10"
+md5          = "0.7"
 
 # Serialization
 serde        = { version = "1",    features = ["derive"] }
