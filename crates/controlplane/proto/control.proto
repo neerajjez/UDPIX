@@ -1,0 +1,27 @@
+syntax = "proto3";
+package udpix.control;
+
+service ControlPlane {
+  rpc Authenticate(AuthRequest)   returns (AuthResponse);
+  rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse);
+  rpc Terminate(TerminateRequest) returns (TerminateResponse);
+}
+
+message AuthRequest {
+  string username = 1;
+  string password = 2;
+}
+
+message AuthResponse {
+  string session_id    = 1;
+  string jwt_token     = 2;
+  bytes  session_key   = 3;
+  bytes  session_nonce = 4;
+  uint64 max_bps       = 5;
+}
+
+message HeartbeatRequest  { string session_id = 1; string jwt_token = 2; }
+message HeartbeatResponse { bool ok = 1; }
+
+message TerminateRequest  { string session_id = 1; string jwt_token = 2; }
+message TerminateResponse { bool ok = 1; }

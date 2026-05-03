@@ -18,11 +18,17 @@ sha2.workspace      = true
 rand.workspace      = true
 jsonwebtoken.workspace = true
 uuid.workspace      = true
+parking_lot.workspace = true
 serde.workspace     = true
 serde_json.workspace = true
 tracing.workspace   = true
+aes-gcm.workspace   = true
+zeroize.workspace   = true
 anyhow.workspace    = true
 thiserror.workspace = true
+
+[dev-dependencies]
+tokio-stream = { version = "0.1", features = ["net"] }
 
 [build-dependencies]
 tonic-build = "0.12"

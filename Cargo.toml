@@ -20,7 +20,7 @@ repository  = "https://github.com/neerajjes/udpix"
 tokio        = { version = "1",    features = ["full"] }
 
 # gRPC control plane
-tonic        = "0.12"
+tonic        = { version = "0.12", features = ["tls"] }
 prost        = "0.13"
 
 # Cryptography

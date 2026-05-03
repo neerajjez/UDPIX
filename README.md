@@ -102,7 +102,7 @@ cargo run --bin udpix-client -- send /path/to/large-file server-host:9000
 - [x] Phase 0 — Project initialization, workspace structure
 - [x] Phase 1 — Custom RUDP protocol engine (packet format, congestion control, SACK/NAK, sendmmsg/recvmmsg)
 - [x] Phase 2 — io_uring storage engine (async disk I/O, small-file packing, zero-copy)
-- [ ] Phase 3 — gRPC control plane (TLS 1.3, PBKDF2 auth, session key exchange)
+- [x] Phase 3 — gRPC control plane (TLS 1.3, PBKDF2 auth, session key exchange)
 - [ ] Phase 4 — NAT traversal (STUN/TURN/ICE, UDP hole punching, rendezvous server)
 - [ ] Phase 5 — CLI tooling, benchmarks, Docker packaging
 
