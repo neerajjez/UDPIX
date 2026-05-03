@@ -36,6 +36,9 @@ context/
 *~
 Thumbs.db
 
+# Graphify output (generated)
+graphify-out/
+
 # Temp/runtime artifacts
 *.log
 *.tmp

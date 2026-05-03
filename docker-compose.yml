@@ -1,0 +1,29 @@
+version: "3.9"
+
+services:
+  udpix-server:
+    build: .
+    command: server --addr 0.0.0.0:9000
+    environment:
+      - UDPIX_ADMIN_USER=${UDPIX_ADMIN_USER:-admin}
+      - UDPIX_ADMIN_PASS=${UDPIX_ADMIN_PASS:-changeme}
+      - RUST_LOG=info
+    ports:
+      - "9000:9000/tcp"
+      - "9000:9000/udp"
+    volumes:
+      - ./received:/received
+    restart: unless-stopped
+
+  coturn:
+    image: coturn/coturn:latest
+    network_mode: host
+    environment:
+      - EXTERNAL_IP=${EXTERNAL_IP:-127.0.0.1}
+    command: >
+      -n
+      --log-file=stdout
+      --listening-port=3478
+      --realm=udpix.local
+      --user=udpix:udpix123
+    restart: unless-stopped

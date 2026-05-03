@@ -104,7 +104,7 @@ cargo run --bin udpix-client -- send /path/to/large-file server-host:9000
 - [x] Phase 2 — io_uring storage engine (async disk I/O, small-file packing, zero-copy)
 - [x] Phase 3 — gRPC control plane (TLS 1.3, PBKDF2 auth, session key exchange)
 - [x] Phase 4 — NAT traversal (STUN/TURN/ICE, UDP hole punching, rendezvous server)
-- [ ] Phase 5 — CLI tooling, benchmarks, Docker packaging
+- [x] Phase 5 — CLI tooling, benchmarks, Docker packaging
 
 ---
 

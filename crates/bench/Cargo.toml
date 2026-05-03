@@ -1,0 +1,17 @@
+[package]
+name    = "udpix-bench"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+criterion      = { workspace = true }
+udpix-protocol = { path = "../protocol" }
+udpix-ioengine = { path = "../ioengine" }
+tokio          = { workspace = true }
+anyhow         = { workspace = true }
+
+[[bench]]
+name    = "throughput"
+harness = false

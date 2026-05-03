@@ -1,0 +1,25 @@
+[package]
+name    = "udpix-cli"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "udpix"
+path = "src/main.rs"
+
+[dependencies]
+udpix-common       = { path = "../common" }
+udpix-protocol     = { path = "../protocol" }
+udpix-ioengine     = { path = "../ioengine" }
+udpix-controlplane = { path = "../controlplane" }
+udpix-traversal    = { path = "../traversal" }
+
+clap               = { workspace = true }
+tokio              = { workspace = true }
+tracing            = { workspace = true }
+tracing-subscriber = { workspace = true }
+anyhow             = { workspace = true }
+parking_lot        = { workspace = true }
+rand               = { workspace = true }
