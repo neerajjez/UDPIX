@@ -74,25 +74,128 @@ crates/
 
 ### Prerequisites
 
-- Linux kernel 5.11+ (required for `io_uring` SQPOLL features)
-- Rust 1.75+ (`rustup install stable`)
-
-### Build
+| Requirement | Version | Notes |
+|-------------|---------|-------|
+| Linux kernel | 5.11+ | Required for `io_uring` SQPOLL features |
+| Rust toolchain | 1.75+ | Install via `rustup` |
+| protobuf compiler | any | `apt install protobuf-compiler` |
 
 ```bash
-git clone git@github.com:neerajjez/UDPIX.git
-cd UDPIX
-cargo build --release
+# Install Rust if you don't have it
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+source $HOME/.cargo/env
+
+# Install protobuf compiler (Debian/Ubuntu)
+sudo apt install protobuf-compiler
 ```
 
-### Run (development)
+---
+
+### 1. Clone and Build
 
 ```bash
-# Start the server (control plane + data plane)
-cargo run --bin udpix-server
+git clone https://github.com/neerajjez/UDPIX.git
+cd UDPIX
 
-# Transfer a file from client to server
-cargo run --bin udpix-client -- send /path/to/large-file server-host:9000
+# Build all crates in release mode
+cargo build --release
+
+# Binary lands here:
+./target/release/udpix --help
+```
+
+---
+
+### 2. Start the Server
+
+On the **receiving machine** (or any machine that will accept incoming transfers):
+
+```bash
+# Insecure mode — fine for local/dev/testing
+./target/release/udpix server --addr 0.0.0.0:9000
+
+# With custom credentials
+UDPIX_ADMIN_USER=alice UDPIX_ADMIN_PASS=hunter2 \
+  ./target/release/udpix server --addr 0.0.0.0:9000
+
+# With TLS (production)
+./target/release/udpix server \
+  --addr 0.0.0.0:9000 \
+  --cert /path/to/cert.pem \
+  --key  /path/to/key.pem
+```
+
+> The server listens on TCP port 9000 (gRPC control plane) and UDP port 9000 (data plane).
+> Open both in your firewall.
+
+---
+
+### 3. Send Files
+
+On the **sending machine**:
+
+```bash
+# Send a single file
+./target/release/udpix send /path/to/largefile.bin SERVER_IP:9000
+
+# Send an entire directory (millions of small files work fine)
+./target/release/udpix send /data/dataset/ SERVER_IP:9000
+
+# With a STUN server for NAT traversal (when both sides are behind NAT)
+./target/release/udpix send /data/dataset/ SERVER_IP:9000 \
+  --stun stun.l.google.com:19302
+
+# Full options
+./target/release/udpix send /data/dataset/ SERVER_IP:9000 \
+  --username alice \
+  --password hunter2 \
+  --local-port 0
+```
+
+---
+
+### 4. Receive Files
+
+On the **receiving machine** (in a second terminal, alongside the server):
+
+```bash
+# Receive into a directory
+./target/release/udpix receive ./output/ SENDER_IP:9000
+
+# With STUN (NAT traversal)
+./target/release/udpix receive ./output/ SENDER_IP:9000 \
+  --stun stun.l.google.com:19302
+```
+
+---
+
+### 5. Docker (zero-dependency deploy)
+
+```bash
+# Build the image
+docker build -t udpix:latest .
+
+# Run the server
+docker run -d \
+  -p 9000:9000 -p 9000:9000/udp \
+  -e UDPIX_ADMIN_PASS=hunter2 \
+  -v $(pwd)/received:/received \
+  udpix:latest server --addr 0.0.0.0:9000
+
+# Full stack (server + coturn STUN/TURN relay)
+docker compose up
+```
+
+---
+
+### 6. Run Tests and Benchmarks
+
+```bash
+# Full test suite (55 tests across all crates)
+cargo test
+
+# Criterion benchmarks (RUDP encode/decode, SACK bitmap, I/O packing)
+cargo bench -p udpix-bench
 ```
 
 ---
@@ -124,32 +227,14 @@ Licensed under either of [MIT](LICENSE-MIT) or [Apache-2.0](LICENSE-APACHE) at y
 
 ## A Note from the Author
 
-*Yeah, I'll be honest with you.*
+I'm a systems and infrastructure engineer — not a software developer, definitely not a Rust developer.
 
-I'm a **systems/infrastructure engineer** — the kind of person who has spent years staring at dashboards at 2 AM wondering why a 4 TB genomics dataset is still at 12% after three hours, or why a directory of 6 million small configuration files takes longer to rsync than it does to regenerate from scratch.
-I've watched TCP collapse on high-latency WAN links so many times I've started taking it personally.
-I've rage-opened Wireshark to watch a theoretically-gigabit fiber link crawl at 3 Mbps because the congestion window decided today was a great day to be conservative.
-I've been on calls with vendors selling "enterprise file transfer solutions" priced like a luxury car, listened to them explain the magic of their proprietary UDP acceleration with straight faces, and quietly wondered how hard it could really be.
+The real reason this exists: at my job I've had to move 20–30 TB of data between on-prem environments, or cloud to cloud, over WAN. Every time it turned into a multi-day nightmare. Even getting 1 TB across a high-latency link with FTP or SFTP was painful — the kind of painful where you start the transfer, go home, come back in the morning, and it's still running. I started looking into what products actually solve this. There are a few, they work, and they cost as much as a car lease.
 
-Spoiler: *hard enough that I kept paying the enterprise license.*
+That felt like a common enough enterprise problem that someone should have built an open-source version of it. So I did a bit of research on why TCP falls apart on long-distance links, figured out what the right approach would be, and decided to build it — with a lot of help from Claude Code, which wrote essentially all of the Rust.
 
-**What I am not** is a software developer in any traditional sense.
-I have never written production Rust before this project.
-I couldn't tell you from memory what a lifetime annotation does without Googling it.
-The phrase "borrow checker" used to trigger a mild stress response.
-Low-level network programming? I know it exists in the same way I know surgery exists — I understand the concept, I respect the craft, and I would not attempt either without supervision.
+This is a vibe-coded project in the most literal sense. I brought the operational knowledge of what the problem actually is and what the solution needs to do. Claude brought the Rust. I'm giving it back to the community because I've taken a lot from open source over the years and this felt like something worth contributing.
 
-What I *do* know is infrastructure and cloud — deeply, operationally, at the "it's 3 AM and the datacenter is on fire" level.
-I know what breaks, why it breaks, and what the thing that fixes it needs to do.
-I have opinions about UDP batch syscall overhead that I probably shouldn't be allowed to have given my job title.
-
-So I did what any self-respecting infrastructure nerd with too much free time and access to an AI coding assistant would do:
-I wrote the design document, argued about protocol semantics with an AI until 1 AM, and then watched Claude Code produce Rust I could not have written myself in a month — while I provided the operational intuition about *why* 22% packet loss is a Tuesday, not a crisis.
-
-This is **vibe coding** at its most sincere.
-I have taken enormous amounts from the open source community over my career — every tool I've ever relied on, every problem that was already solved before I had to solve it.
-This is my attempt to give something back: not perfect code, not a production-ready release, but a serious, well-documented, architecturally-sound foundation for something the community actually needs.
-
-If you're a real Rust engineer and you're reading this source thinking "who wrote this" — hello, that's me, and I am so sorry, and also please open a PR.
+If you're a real Rust engineer looking at this code — I know, I'm sorry, please open a PR.
 
 *Vibecoded by [@neerajjez](https://github.com/neerajjez) with the help of [Claude Code](https://claude.ai/code)*
