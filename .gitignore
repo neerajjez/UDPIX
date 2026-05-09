@@ -39,6 +39,9 @@ Thumbs.db
 # Graphify output (generated)
 graphify-out/
 
+# Local test infrastructure (run `bash testing/run-tests.sh` to execute)
+testing/
+
 # Temp/runtime artifacts
 *.log
 *.tmp
