@@ -49,14 +49,11 @@ struct WriteResult {
 // ── Partial-file accumulator ──────────────────────────────────────────────────
 
 /// Tracks in-progress re-assembly of a large file split across multiple blocks.
-/// (Used in the v2 implementation once Packer::unpack exposes FileEntry directly.)
-#[allow(dead_code)]
 struct PartialFile {
     total_parts: u32,
     parts:       HashMap<u32, Bytes>, // part_index → bytes
 }
 
-#[allow(dead_code)]
 impl PartialFile {
     fn is_complete(&self) -> bool {
         self.parts.len() == self.total_parts as usize
@@ -109,7 +106,7 @@ impl AsyncWriter {
         &self,
         mut data_rx: mpsc::Receiver<Vec<u8>>,
     ) -> anyhow::Result<u64> {
-        // In-progress large-file re-assembly: key = (relative_path, total_parts)
+        // Accumulator for large files split across multiple PackBlocks.
         let mut partial: HashMap<PathBuf, PartialFile> = HashMap::new();
         let mut in_flight = 0usize;
         let mut total_bytes = 0u64;
@@ -119,36 +116,36 @@ impl AsyncWriter {
                 id:   udpix_common::types::BlockId(0),
                 data: Bytes::from(chunk),
             };
-            let entries = Packer::unpack(&block)
+            let entries = Packer::unpack_entries(&block)
                 .context("failed to unpack received PackBlock")?;
 
-            for (rel_path, data) in entries {
-                let file_bytes: Vec<u8> = data.to_vec();
+            for (entry, data) in entries {
+                let abs_path = self.output_dir.join(&entry.path);
 
-                // Detect split-file parts from the manifest.
-                // For now we re-parse the relevant fields from the block by
-                // checking if the file is already in the partial accumulator.
-                // A simpler design: treat every entry as a complete file
-                // UNLESS the manifest explicitly marks part_index > 0.
-                // We achieve this by having Packer::unpack return the
-                // FileEntry alongside the bytes.  Since it currently only
-                // returns (PathBuf, Bytes), we use the following heuristic:
-                // if the same relative path appears in multiple consecutive
-                // blocks it is a split file.
-                //
-                // TODO(Phase 2 v2): expose FileEntry from unpack so we can
-                // read part_index / total_parts directly.
+                if entry.total_parts == 1 {
+                    // Unsplit file — write directly.
+                    let bytes = data.to_vec();
+                    total_bytes += bytes.len() as u64;
+                    self.submit_write(abs_path, bytes)?;
+                    in_flight += 1;
+                } else {
+                    // Split file — accumulate parts; write when complete.
+                    let pf = partial.entry(entry.path.clone()).or_insert_with(|| PartialFile {
+                        total_parts: entry.total_parts,
+                        parts: HashMap::new(),
+                    });
+                    pf.parts.insert(entry.part_index, data);
 
-                let abs_path = self.output_dir.join(&rel_path);
-                total_bytes += file_bytes.len() as u64;
-
-                // Submit the write to the background thread.
-                self.submit_write(abs_path, file_bytes)?;
-                in_flight += 1;
+                    if pf.is_complete() {
+                        let assembled = partial.remove(&entry.path).unwrap().assemble();
+                        total_bytes += assembled.len() as u64;
+                        self.submit_write(abs_path, assembled)?;
+                        in_flight += 1;
+                    }
+                }
 
                 // Reap any completed writes to keep the in-flight window bounded.
                 while in_flight > 0 {
-                    // Non-blocking check for a completion.
                     match self.result_rx.try_recv() {
                         Ok(wr) => {
                             wr.result.with_context(|| {
@@ -160,8 +157,6 @@ impl AsyncWriter {
                         Err(e) => anyhow::bail!("writer thread died: {e}"),
                     }
                 }
-                drop(partial); // suppress unused warning; will be used in v2
-                partial = HashMap::new();
             }
         }
 

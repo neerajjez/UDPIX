@@ -1,5 +1,5 @@
 # ── build stage ───────────────────────────────────────────────────────────────
-FROM rust:1.78-slim AS builder
+FROM rust:1.88-slim AS builder
 
 RUN apt-get update && apt-get install -y \
     protobuf-compiler \

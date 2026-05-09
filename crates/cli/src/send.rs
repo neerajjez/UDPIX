@@ -7,8 +7,9 @@ use anyhow::Context;
 use clap::Args;
 
 use udpix_ioengine::IoEngine;
+use udpix_protocol::packet::{now_us, RudpHeader};
+use udpix_protocol::sender::{Sender, SenderCommand, MAX_PAYLOAD};
 use udpix_protocol::sack::SackPayload;
-use udpix_protocol::sender::{Sender, SenderCommand};
 use udpix_protocol::session::SessionStats;
 use udpix_traversal::{TraversalEngine, holepunch::HolePunchConfig};
 
@@ -42,31 +43,29 @@ pub struct SendArgs {
 }
 
 pub async fn run(args: SendArgs) -> anyhow::Result<()> {
-    let proto_socket: Arc<std::net::UdpSocket> = if args.direct {
-        // ── Direct / LAN mode ─────────────────────────────────────────────────
-        // Bind to a known local port, connect straight to the peer.
-        // No STUN, no ICE — works on any subnet where the peer is reachable.
-        let bind_addr = format!("0.0.0.0:{}", args.local_port);
+    let SendArgs { path, peer, direct, local_port, stun, .. } = args;
+
+    let proto_socket: Arc<std::net::UdpSocket> = if direct {
+        let bind_addr = format!("0.0.0.0:{local_port}");
         let sock = std::net::UdpSocket::bind(&bind_addr)
             .with_context(|| format!("bind UDP on {bind_addr}"))?;
-        sock.connect(args.peer)
-            .with_context(|| format!("connect to {}", args.peer))?;
+        sock.connect(peer)
+            .with_context(|| format!("connect to {peer}"))?;
         tracing::info!(
             "Direct mode: {} → {}",
             sock.local_addr().unwrap(),
-            args.peer
+            peer
         );
         Arc::new(sock)
     } else {
-        // ── NAT traversal mode ────────────────────────────────────────────────
-        let stun_servers = args.stun.into_iter().collect::<Vec<_>>();
+        let stun_servers = stun.into_iter().collect::<Vec<_>>();
         let engine = TraversalEngine::new(HolePunchConfig {
             stun_servers,
             ..Default::default()
         });
-        tracing::info!("NAT traversal: connecting to {}", args.peer);
+        tracing::info!("NAT traversal: connecting to {peer}");
         let result = engine
-            .connect(args.peer, args.local_port)
+            .connect(peer, local_port)
             .await
             .context("NAT traversal failed")?;
         let peer_addr = result.peer_addr;
@@ -78,21 +77,111 @@ pub async fn run(args: SendArgs) -> anyhow::Result<()> {
         Arc::new(std_sock)
     };
 
+    if direct {
+        run_direct(path, proto_socket).await
+    } else {
+        run_rudp(path, proto_socket).await
+    }
+}
+
+// ── Direct-mode send (no rate limiting — designed for LAN / zero-loss paths) ──
+//
+// Each PackBlock is wrapped in an 8-byte LE length prefix before being split
+// into RUDP DATA datagrams.  This lets the receiver's reassembly task know
+// exactly where each block boundary is, since RUDP delivers per-datagram
+// payloads (~1443 bytes) rather than whole blocks.
+async fn run_direct(path: PathBuf, socket: Arc<std::net::UdpSocket>) -> anyhow::Result<()> {
+    let io = IoEngine::new(std::env::temp_dir()).context("IoEngine::new")?;
+    let (io_tx, mut io_rx) = tokio::sync::mpsc::channel::<SenderCommand>(64);
+
+    let sock = Arc::clone(&socket);
+    let send_handle = tokio::spawn(async move {
+        let mut seq: u64 = 0;
+        let mut bytes_sent: u64 = 0;
+
+        while let Some(cmd) = io_rx.recv().await {
+            match cmd {
+                SenderCommand::SendChunk(data) => {
+                    // 8-byte LE length prefix so receiver can reconstruct block boundaries
+                    let mut framed = Vec::with_capacity(8 + data.len());
+                    framed.extend_from_slice(&(data.len() as u64).to_le_bytes());
+                    framed.extend_from_slice(&data);
+
+                    for chunk in framed.chunks(MAX_PAYLOAD) {
+                        let hdr = RudpHeader::new_data(1, seq, now_us(), chunk.len() as u16);
+                        let mut pkt = vec![0u8; RudpHeader::SIZE + chunk.len()];
+                        hdr.write_to(&mut pkt);
+                        pkt[RudpHeader::SIZE..].copy_from_slice(chunk);
+                        let _ = sock.send(&pkt);
+                        seq += 1;
+                        bytes_sent += chunk.len() as u64;
+                    }
+                }
+                SenderCommand::Shutdown => break,
+            }
+        }
+
+        // FIN sent 5× to survive light packet loss
+        let fin = RudpHeader::new_fin(1, seq, now_us());
+        let mut fin_buf = [0u8; RudpHeader::SIZE];
+        fin.write_to(&mut fin_buf);
+        for _ in 0..5 {
+            let _ = sock.send(&fin_buf);
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+
+        bytes_sent
+    });
+
+    let t0 = std::time::Instant::now();
+    tracing::info!("Sending {:?}", path);
+    io.send_directory(path, io_tx)
+        .await
+        .context("send_directory")?;
+
+    let bytes_sent = send_handle.await.context("send task panicked")?;
+    let elapsed = t0.elapsed();
+    let mbps = bytes_sent as f64 / elapsed.as_secs_f64() / 1_000_000.0;
+    tracing::info!(
+        "Transfer complete — {bytes_sent} bytes in {:.2}s ({mbps:.1} MB/s)",
+        elapsed.as_secs_f64(),
+    );
+    Ok(())
+}
+
+// ── RUDP send (NAT traversal mode with congestion control) ────────────────────
+async fn run_rudp(path: PathBuf, socket: Arc<std::net::UdpSocket>) -> anyhow::Result<()> {
     let stats = SessionStats::new();
     let (cmd_tx, cmd_rx) = tokio::sync::mpsc::channel::<SenderCommand>(512);
     let (_sack_tx, sack_rx) = tokio::sync::mpsc::channel::<SackPayload>(512);
 
-    let sender = Sender::new(1, Arc::clone(&proto_socket), cmd_rx, sack_rx, Arc::clone(&stats));
+    let sender = Sender::new(1, Arc::clone(&socket), cmd_rx, sack_rx, Arc::clone(&stats));
     let io = IoEngine::new(std::env::temp_dir()).context("IoEngine::new")?;
 
     let sender_handle = tokio::spawn(sender.run());
 
     let t0 = std::time::Instant::now();
-    tracing::info!("Sending {:?}", args.path);
-    io.send_directory(args.path, cmd_tx)
+    tracing::info!("Sending {:?}", path);
+    io.send_directory(path, cmd_tx)
         .await
         .context("send_directory")?;
-    sender_handle.await.context("sender task panicked")?;
+
+    // Without live SACK feedback the in_flight window never drains; give the
+    // sender 1 s to flush any last retransmits then abort.
+    let _ = tokio::time::timeout(
+        std::time::Duration::from_secs(1),
+        sender_handle,
+    )
+    .await;
+
+    // Fire FIN a few times to survive light packet loss.
+    let fin = RudpHeader::new_fin(1, 0, now_us());
+    let mut fin_buf = [0u8; RudpHeader::SIZE];
+    fin.write_to(&mut fin_buf);
+    for _ in 0..5 {
+        let _ = socket.send(&fin_buf);
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
 
     let elapsed = t0.elapsed();
     let bytes = stats.bytes_sent.load(Ordering::Relaxed);

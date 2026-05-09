@@ -4,7 +4,7 @@
 > Are productivity-killing delays from traditional TCP-based file transfer tools holding your team back?
 > If so, UDPix is built for you.
 
-UDPix is an open-source, enterprise-grade high-speed file transfer platform that helps organizations move petabytes of data across Wide Area Networks (WANs) at speeds up to **100× faster** than conventional FTP or SFTP tools — even over long-distance, high-latency, or lossy connections.
+UDPix is an open-source, enterprise-grade high-speed file transfer platform that helps organizations move terabytes of data across Wide Area Networks (WANs) at speeds up to **100× faster** than conventional FTP or SFTP tools — even over long-distance, high-latency, or lossy connections.
 
 Whether you're a media company distributing content globally, a genomics lab syncing datasets across continents, a financial services firm moving time-critical data, or any enterprise that can't afford to wait — UDPix delivers.
 
@@ -208,6 +208,48 @@ cargo bench -p udpix-bench
 - [x] Phase 3 — gRPC control plane (TLS 1.3, PBKDF2 auth, session key exchange)
 - [x] Phase 4 — NAT traversal (STUN/TURN/ICE, UDP hole punching, rendezvous server)
 - [x] Phase 5 — CLI tooling, benchmarks, Docker packaging
+
+---
+
+## Integration Testing
+
+The `testing/` directory contains a Docker Compose setup for end-to-end LAN transfer testing. It spins up two containers on a virtual 172.28.1.0/24 network — a sender and a receiver — transfers 505 files totalling ~115 MB, and verifies every file via SHA-256 checksums.
+
+```bash
+cd testing
+docker compose up --build
+# Expected: "RESULT: ALL 505 FILES VERIFIED — PASS"
+```
+
+> **io_uring in Docker** requires `security_opt: seccomp:unconfined` and `ulimits: memlock: -1` in the compose file.
+
+---
+
+## Bug Fixes — LAN Integration Test
+
+Four bugs were found and fixed during the first real end-to-end transfer test:
+
+### 1. PackBlock Framing Mismatch
+**Symptom:** `bad magic 0x28805E78` error on receiver  
+**Root cause:** The RUDP Receiver delivers individual ~1443-byte UDP payloads to the data channel. The IoEngine writer expected each `Vec<u8>` to be a *complete* PackBlock starting with the `UDPX` magic — but it was receiving fragments.  
+**Fix:** Direct-mode sender now prefixes each PackBlock with an 8-byte LE `u64` length before splitting into datagrams. The receiver runs a reassembly task that accumulates fragments and extracts complete blocks before handing them to the IoEngine.
+
+### 2. RUDP Sender Stall (Direct Mode)
+**Symptom:** Sender transferred 0 bytes — transfer completed instantly with no data  
+**Root cause:** The RUDP `Sender::run()` loop has a 500ms probe tick; when both `cmd_rx` and `sack_rx` are dropped simultaneously, the select loop stalls until the 1-second timeout fires — by which time essentially nothing was sent.  
+**Fix:** For `--direct` (LAN) mode, the full RUDP congestion machinery is bypassed. A lightweight send loop writes packets directly to the socket at line rate, then sends FIN ×5 with 20ms gaps.
+
+### 3. Split-File Reassembly Broken
+**Symptom:** 4 large files (>16 MB) had wrong checksums; 1 was missing entirely  
+**Root cause:** The `AsyncWriter` called `submit_write()` with `truncate(true)` for *each part* of a split file, overwriting prior parts. Additionally, `drop(partial); partial = HashMap::new()` inside the loop silently discarded the accumulator on every block.  
+**Fix:** `Packer::unpack_entries()` now exposes `part_index` / `total_parts`. The writer uses a `PartialFile` accumulator and only calls `submit_write()` once all parts have arrived.
+
+### 4. UDP Receive Buffer Overflow
+**Symptom:** 1 large file still missing after fix #3 — `bytes_acked = 114,961,559` vs `bytes_sent = 115,169,351` (~207 KB of actual packet loss)  
+**Root cause:** The Linux default UDP receive buffer is 208 KB. At 131 MB/s sender rate, the receiver's kernel buffer overflowed and silently dropped packets.  
+**Fix:** Receiver calls `setsockopt(SO_RCVBUF, 16 MB)` after bind. The kernel clips this to `net.core.rmem_max` (typically 4 MB), which is sufficient to absorb any burst.
+
+**Final result: 505/505 files verified — PASS. Sender 122 MB/s, receiver 53 MB/s, 2,065 ms.**
 
 ---
 

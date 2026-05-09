@@ -160,24 +160,21 @@ impl Packer {
 
     // ── Unpacking ─────────────────────────────────────────────────────────────
 
-    /// Deserialise a `PackBlock` back into `(relative_path, file_bytes)` pairs.
-    ///
-    /// Returns an error if the magic bytes are wrong or the manifest is truncated.
-    pub fn unpack(block: &PackBlock) -> anyhow::Result<Vec<(PathBuf, Bytes)>> {
+    /// Deserialise a `PackBlock` into `(FileEntry, file_bytes)` pairs,
+    /// preserving `part_index` / `total_parts` for split-file reassembly.
+    pub fn unpack_entries(block: &PackBlock) -> anyhow::Result<Vec<(FileEntry, Bytes)>> {
         let buf = &block.data;
         let mut pos = 0usize;
 
-        // ── Header ───────────────────────────────────────────────────────────
-        let magic   = Self::read_u32(buf, &mut pos)?;
-        let _version = Self::read_u16(buf, &mut pos)?;
-        let _block_id = Self::read_u64(buf, &mut pos)?;
+        let magic       = Self::read_u32(buf, &mut pos)?;
+        let _version    = Self::read_u16(buf, &mut pos)?;
+        let _block_id   = Self::read_u64(buf, &mut pos)?;
         let entry_count = Self::read_u32(buf, &mut pos)?;
 
         if magic != MAGIC {
             anyhow::bail!("PackBlock: bad magic 0x{magic:08X} (expected 0x{MAGIC:08X})");
         }
 
-        // ── Manifest entries ──────────────────────────────────────────────────
         let mut entries: Vec<FileEntry> = Vec::with_capacity(entry_count as usize);
         for _ in 0..entry_count {
             let path_len    = Self::read_u16(buf, &mut pos)? as usize;
@@ -191,10 +188,9 @@ impl Packer {
             entries.push(FileEntry { path, offset, size, part_index, total_parts });
         }
 
-        // ── Payload extraction ────────────────────────────────────────────────
         let payload_start = pos;
         let mut result = Vec::with_capacity(entries.len());
-        for entry in &entries {
+        for entry in entries {
             let start = payload_start + entry.offset as usize;
             let end   = start + entry.size as usize;
             if end > buf.len() {
@@ -204,9 +200,18 @@ impl Packer {
                     buf.len()
                 );
             }
-            result.push((entry.path.clone(), block.data.slice(start..end)));
+            let data = block.data.slice(start..end);
+            result.push((entry, data));
         }
         Ok(result)
+    }
+
+    /// Deserialise a `PackBlock` back into `(relative_path, file_bytes)` pairs.
+    pub fn unpack(block: &PackBlock) -> anyhow::Result<Vec<(PathBuf, Bytes)>> {
+        Ok(Self::unpack_entries(block)?
+            .into_iter()
+            .map(|(entry, data)| (entry.path, data))
+            .collect())
     }
 
     // ── Serialise helper ──────────────────────────────────────────────────────
