@@ -41,6 +41,7 @@ graphify-out/
 
 # Local test infrastructure (run `bash testing/run-tests.sh` to execute)
 testing/
+!testing/TEST_PLAN.md
 
 # Temp/runtime artifacts
 *.log
