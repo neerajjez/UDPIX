@@ -5,6 +5,9 @@ use std::sync::atomic::Ordering;
 
 use anyhow::Context;
 use clap::Args;
+use tokio::io::AsyncWriteExt;
+use tokio::net::TcpListener;
+use tokio::time::{timeout, Duration};
 
 use udpix_ioengine::IoEngine;
 use udpix_protocol::receiver::Receiver;
@@ -96,10 +99,30 @@ pub async fn run(args: ReceiveArgs) -> anyhow::Result<()> {
     };
 
     if direct {
+        let port = proto_socket.local_addr()?.port();
+        tcp_signal_ready(port).await?;
         run_direct(output_dir, proto_socket).await
     } else {
         run_rudp(output_dir, proto_socket).await
     }
+}
+
+// Signal the sender that the receiver's UDP socket is bound and ready.
+// Binds a TCP listener on the same port number (TCP and UDP coexist independently),
+// accepts one connection from the sender, sends "READY\n", then closes.
+async fn tcp_signal_ready(port: u16) -> anyhow::Result<()> {
+    let listener = TcpListener::bind(SocketAddr::from(([0, 0, 0, 0], port)))
+        .await
+        .with_context(|| format!("TCP handshake: bind on port {port}"))?;
+    tracing::info!("TCP handshake: waiting for sender on TCP :{port}");
+    let (mut stream, _) = timeout(Duration::from_secs(300), listener.accept())
+        .await
+        .context("TCP handshake: timed out waiting for sender (300s)")?
+        .context("TCP handshake: accept error")?;
+    stream.write_all(b"READY\n").await
+        .context("TCP handshake: failed to write READY")?;
+    tracing::info!("TCP handshake: READY sent — receiver is live");
+    Ok(())
 }
 
 // ── Direct-mode receive (framing reassembly) ──────────────────────────────────

@@ -208,6 +208,7 @@ cargo bench -p udpix-bench
 - [x] Phase 3 — gRPC control plane (TLS 1.3, PBKDF2 auth, session key exchange)
 - [x] Phase 4 — NAT traversal (STUN/TURN/ICE, UDP hole punching, rendezvous server)
 - [x] Phase 5 — CLI tooling, benchmarks, Docker packaging
+- [x] Phase 1 functional correctness — 13/13 tests PASS (direct mode, timing gaps, RUDP, large files)
 
 ---
 

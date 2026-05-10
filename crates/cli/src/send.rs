@@ -5,6 +5,9 @@ use std::sync::atomic::Ordering;
 
 use anyhow::Context;
 use clap::Args;
+use tokio::io::AsyncReadExt;
+use tokio::net::TcpStream;
+use tokio::time::{sleep, Duration, Instant};
 
 use udpix_ioengine::IoEngine;
 use udpix_protocol::packet::{now_us, RudpHeader};
@@ -78,9 +81,38 @@ pub async fn run(args: SendArgs) -> anyhow::Result<()> {
     };
 
     if direct {
+        tcp_await_ready(peer).await?;
         run_direct(path, proto_socket).await
     } else {
         run_rudp(path, proto_socket).await
+    }
+}
+
+// Wait for the receiver's TCP "READY" signal before blasting UDP data.
+// Retries the TCP connect every 500 ms until the receiver comes up or 60 s elapses.
+async fn tcp_await_ready(peer: SocketAddr) -> anyhow::Result<()> {
+    let deadline = Instant::now() + Duration::from_secs(60);
+    tracing::info!("TCP handshake: waiting for receiver at {peer} (60s timeout)");
+    loop {
+        if Instant::now() >= deadline {
+            anyhow::bail!("TCP handshake: receiver did not become ready within 60s");
+        }
+        match TcpStream::connect(peer).await {
+            Ok(mut stream) => {
+                let mut buf = [0u8; 8];
+                let n = stream.read(&mut buf).await
+                    .context("TCP handshake: read error")?;
+                if n >= 5 && &buf[..5] == b"READY" {
+                    tracing::info!("TCP handshake: receiver ready — starting transfer");
+                    return Ok(());
+                }
+                anyhow::bail!("TCP handshake: unexpected response from receiver");
+            }
+            Err(_) => {
+                // Receiver not up yet — retry in 500 ms
+                sleep(Duration::from_millis(500)).await;
+            }
+        }
     }
 }
 
