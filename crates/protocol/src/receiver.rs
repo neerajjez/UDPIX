@@ -105,6 +105,11 @@ pub struct Receiver {
 
     /// Pre-allocated receive buffer pool.
     pool: RecvBufferPool,
+
+    /// True once the first DATA packet has been received.
+    /// Heartbeat SACKs are not sent on the wire until then to avoid
+    /// ICMP-flood corruption when the sender hasn't bound yet (F-38 / P1-011).
+    data_seen: bool,
 }
 
 impl Receiver {
@@ -129,6 +134,7 @@ impl Receiver {
             sack_mgr: SackManager::new(initial_seq),
             stats,
             pool: RecvBufferPool::new(),
+            data_seen: false,
         }
     }
 
@@ -179,8 +185,9 @@ impl Receiver {
         let old_interval = self.sack_mgr.heartbeat_interval();
 
         // Transmit the SACK payload back to the Sender task.
-        // We send a clone through the channel (cheap — it's just u64 words).
-        let _ = self.sack_tx.send(sack.clone()).await;
+        // Use try_send (non-blocking): in direct mode the sender never reads this channel,
+        // so .await would block forever once the 512-entry buffer fills (~2.5 s).
+        let _ = self.sack_tx.try_send(sack.clone());
 
         // Also write it onto the wire as a UDP heartbeat-SACK datagram.
         let mut buf = Vec::with_capacity(RudpHeader::SIZE + sack.wire_size());
@@ -193,7 +200,11 @@ impl Receiver {
         );
         hdr.write_to(&mut buf[..RudpHeader::SIZE]);
         sack.serialise(&mut buf);
-        let _ = self.socket.send(&buf);
+        // Only transmit on the wire after we've seen the first DATA packet.
+        // Sending to an unbound peer triggers ICMP errors that corrupt sk_err.
+        if self.data_seen {
+            let _ = self.socket.send(&buf);
+        }
 
         // Re-read the interval *after* tick() updated it.
         let new_interval = self.sack_mgr.heartbeat_interval();
@@ -241,6 +252,7 @@ impl Receiver {
         }
 
         if hdr.is_data() {
+            self.data_seen = true;
             let payload_len = hdr.payload_len() as usize;
             let payload_start = RudpHeader::SIZE;
             if buf.len() < payload_start + payload_len {
@@ -365,34 +377,49 @@ fn recv_batch_recvmmsg(
 
 // ── Tokio readable helper ─────────────────────────────────────────────────────
 
-/// Waits until the socket is readable (EPOLLIN) using Tokio's async I/O reactor.
+/// Waits until the socket is readable (EPOLLIN) using Tokio's async I/O reactor,
+/// with a 1 ms fallback timeout.
+///
+/// The 1 ms cap ensures `recv_batch` is called even when EPOLLIN is not
+/// delivered — e.g. when the socket was already readable at the moment we
+/// registered the dup'd fd (edge-triggered epoll) or when ICMP errors have put
+/// the socket into an error state that suppresses EPOLLIN.  `recv_batch` uses
+/// MSG_DONTWAIT so an empty socket is handled gracefully.
 async fn readable(socket: &UdpSocket) -> bool {
-    // Convert the std socket to a Tokio UdpSocket just to poll readiness,
-    // then immediately re-convert.  This avoids holding a TokioUdpSocket
-    // permanently while still supporting our Arc<std::net::UdpSocket> design.
     use tokio::net::UdpSocket as TokioUdp;
 
-    // We duplicate the fd so Tokio can register it without taking ownership.
     #[cfg(unix)]
     {
         use std::os::unix::io::{AsRawFd, FromRawFd};
         let fd = socket.as_raw_fd();
         let dup_fd = unsafe { libc::dup(fd) };
         if dup_fd < 0 {
-            return false;
+            // fd table exhausted — fall back to a short sleep so we don't spin.
+            tokio::time::sleep(std::time::Duration::from_millis(1)).await;
+            return true;
         }
         let std_dup = unsafe { UdpSocket::from_raw_fd(dup_fd) };
         std_dup.set_nonblocking(true).ok();
-        if let Ok(tok) = TokioUdp::from_std(std_dup) {
-            tok.readable().await.is_ok()
-        } else {
-            false
+        match TokioUdp::from_std(std_dup) {
+            Ok(tok) => {
+                // Wait for EPOLLIN, but never block longer than 1 ms.
+                // unwrap_or(true) so a timeout also triggers a recv attempt.
+                let _ = tokio::time::timeout(
+                    std::time::Duration::from_millis(1),
+                    tok.readable(),
+                )
+                .await;
+                true
+            }
+            Err(_) => {
+                tokio::time::sleep(std::time::Duration::from_millis(1)).await;
+                true
+            }
         }
     }
 
     #[cfg(not(unix))]
     {
-        // On non-Unix platforms just yield once so the caller can try recv.
         tokio::task::yield_now().await;
         true
     }

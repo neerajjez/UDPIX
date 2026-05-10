@@ -253,6 +253,54 @@ Four bugs were found and fixed during the first real end-to-end transfer test:
 
 ---
 
+## Phase 1 Functional Correctness Test Suite
+
+`testing/TEST_PLAN.md` defines 47 test cases across 6 phases. Phase 1 (13 tests) is now runnable:
+
+```bash
+# Run all 13 Phase 1 tests (empty files, large files, deep paths, unicode names, timing gaps, RUDP mode)
+bash testing/run-phase1.sh
+
+# Run a single scenario for debugging
+P1_SCENARIO=p1-003 docker compose -f testing/docker-compose.phase1.yml up --build
+```
+
+Two additional bugs were found and fixed while building the Phase 1 test infrastructure:
+
+### 5. Receiver Heartbeat Channel Deadlock
+
+**Symptom:** With a 3+ second gap between receiver binding and sender connecting, `udpix receive` hung permanently — transfer never started.
+
+**Root cause:** `send_heartbeat_sack()` called `self.sack_tx.send(sack).await` on a bounded channel (capacity 512). In direct mode, the consuming end (`_sack_rx`) is never read. After ~2.5 seconds (512 heartbeats × 5 ms), the channel filled and `.await` blocked forever — starving the `readable()` arm of the `tokio::select!` loop, so no incoming packets were ever processed.
+
+**Fix:** Changed to `self.sack_tx.try_send(sack)` — non-blocking; drops the SACK payload if the channel is full rather than waiting. In direct mode the sender ignores SACKs anyway.
+
+### 6. ICMP Socket State Corruption (Receiver-Before-Sender)
+
+**Symptom:** When receiver bound its socket before the sender was listening, after ~3.5 seconds the socket stopped receiving data entirely even after the sender connected.
+
+**Root cause:** The heartbeat loop sent UDP SACK packets to the peer's address even before any data had arrived. When the sender hadn't bound its port yet, the kernel generated ICMP "port unreachable" responses, which set `sk_err = ECONNREFUSED` on the receiver's connected UDP socket. After enough ICMP cycles, `recvmmsg` returned ECONNREFUSED on every call instead of actual data.
+
+**Fix:** Added a `data_seen: bool` field to `Receiver`. Wire heartbeats (`socket.send()`) are suppressed until the first DATA packet is received, eliminating the ICMP flood while waiting for the sender.
+
+### 7. Race: Empty `checksums.txt` Causes Premature Send Start
+
+**Symptom:** P1-004 (512 MB transfer) — receiver showed 0 bytes written; sender completed before receiver ever bound its socket.
+
+**Root cause:** Shell I/O redirect `sha256sum ... > checksums.txt` creates an empty file immediately (at the `>` operator), before `sha256sum` writes any output. The sender's polling loop detects the empty file, waits 3 seconds, then starts sending — while the receiver is still running `sha256sum` on 512 MB (which takes 2–3 s). By the time the receiver binds, the sender's UDP burst is already partly done.
+
+**Fix:** Use an atomic write in all test receiver scripts: `sha256sum ... > checksums.txt.tmp && mv checksums.txt.tmp checksums.txt`. The `mv` (same-filesystem rename) is atomic; the sender only sees `checksums.txt` once it is complete.
+
+### 8. `checksums.txt.tmp` Included in Checksum Manifest (find Glob Regression)
+
+**Symptom:** P1-002, P1-005, P1-006 — receiver reported `MISSING: checksums.txt.tmp` during verification; 3/13 tests failed.
+
+**Root cause:** The atomic-write fix (Bug #7) introduced a temporary file `checksums.txt.tmp`. The `find "$TESTDATA" -type f ! -name "checksums.txt"` patterns used to build the SHA-256 manifest did NOT exclude `checksums.txt.tmp`. Since the `>` redirect creates the `.tmp` file as empty before `find` runs, it was picked up and listed in the manifest. The receiver then checked for `/received/checksums.txt.tmp` — which was never transferred — and reported it missing.
+
+**Fix:** Added `! -name "checksums.txt.tmp"` to all four `find` invocations in `entrypoint-receiver-p1.sh` that use a `! -name "checksums.txt"` exclusion. The `finalize_data_all()` helper and three inline scenario-specific `find` calls (P1-002, P1-005, P1-006) were all updated.
+
+---
+
 ## Contributing
 
 UDPix is community-built. PRs, issues, and architectural discussions are welcome.

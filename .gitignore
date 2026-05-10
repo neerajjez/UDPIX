@@ -42,6 +42,10 @@ graphify-out/
 # Local test infrastructure (run `bash testing/run-tests.sh` to execute)
 testing/
 !testing/TEST_PLAN.md
+!testing/docker-compose.phase1.yml
+!testing/run-phase1.sh
+!testing/scripts/entrypoint-receiver-p1.sh
+!testing/scripts/entrypoint-sender-p1.sh
 
 # Temp/runtime artifacts
 *.log

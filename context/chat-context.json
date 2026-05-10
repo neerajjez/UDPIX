@@ -1,0 +1,522 @@
+{
+  "project": "UDPix",
+  "description": "Enterprise-grade high-speed UDP data transfer platform \u2014 custom RUDP engine designed for 22\u201326% packet loss as the operational baseline",
+  "entities": [
+    {
+      "id": "e1",
+      "name": "UDPix",
+      "type": "project",
+      "description": "Petabyte-scale UDP transfer platform targeting 10 Gbps+, 100ms+ latency, 22\u201326% packet loss tolerance as baseline"
+    },
+    {
+      "id": "e2",
+      "name": "Rust",
+      "type": "language",
+      "description": "Primary language for memory safety and zero-cost io_uring abstractions"
+    },
+    {
+      "id": "e3",
+      "name": "Custom RUDP",
+      "type": "protocol",
+      "description": "Rate-based congestion control over UDP; token bucket pacing; 1024-bit SACK bitmap; adaptive heartbeat 1\u20135 ms"
+    },
+    {
+      "id": "e4",
+      "name": "io_uring",
+      "type": "technology",
+      "description": "Linux async disk I/O with SQPOLL, eliminates blocking context switches for file operations"
+    },
+    {
+      "id": "e5",
+      "name": "gRPC",
+      "type": "technology",
+      "description": "Control plane transport over TCP/HTTP2 with TLS 1.3 via tonic + rustls"
+    },
+    {
+      "id": "e6",
+      "name": "AES-256-GCM",
+      "type": "security",
+      "description": "Payload encryption for UDP data plane"
+    },
+    {
+      "id": "e7",
+      "name": "STUN/TURN/ICE",
+      "type": "protocol",
+      "description": "NAT traversal stack for P2P direct transfers"
+    },
+    {
+      "id": "e8",
+      "name": "sendmmsg/recvmmsg",
+      "type": "syscall",
+      "description": "Batch 64 UDP datagrams per syscall \u2014 ~250x fewer context switches vs per-datagram send/recv"
+    },
+    {
+      "id": "e9",
+      "name": "RayFile pattern",
+      "type": "concept",
+      "description": "Pack thousands of small files into 16MB virtual blocks before network transmission"
+    },
+    {
+      "id": "e10",
+      "name": "BandwidthProfiler",
+      "type": "component",
+      "description": "Slow-start prober: 10\u219250\u2192100\u2192200\u2192500\u21921000\u21922000 Mbps; finds goodput peak; throttles to 5 Mbps floor at >30% loss"
+    },
+    {
+      "id": "e11",
+      "name": "SackManager",
+      "type": "component",
+      "description": "1024-bit sliding SACK bitmap; adaptive heartbeat: 1ms at >20% loss, 3ms at 10\u201320%, 5ms below 10%"
+    },
+    {
+      "id": "e12",
+      "name": "TokenBucket",
+      "type": "component",
+      "description": "Rate pacer that prevents micro-burst loss inflation on WAN links"
+    },
+    {
+      "id": "e13",
+      "name": "SegQueue",
+      "type": "component",
+      "description": "Lock-free crossbeam retransmit priority queue; urgent (\u22652 consecutive NAKs) vs normal lanes"
+    },
+    {
+      "id": "e14",
+      "name": "Packer",
+      "type": "component",
+      "description": "RayFile-pattern bulk packer: groups (path,bytes) pairs into \u226416MB PackBlocks with binary manifest (magic UDPX, entry_count, per-file path/offset/size/part_index)"
+    },
+    {
+      "id": "e15",
+      "name": "AsyncReader",
+      "type": "component",
+      "description": "io_uring file reader: QUEUE_DEPTH=256 SQ entries, READ_CHUNK=64KB, dedicated OS thread bridged to Tokio via crossbeam; falls back to std::fs on non-Linux"
+    },
+    {
+      "id": "e16",
+      "name": "AsyncWriter",
+      "type": "component",
+      "description": "io_uring file writer: WRITE_QUEUE_DEPTH=128, auto-creates intermediate directories, reaps completions to keep in-flight window bounded"
+    },
+    {
+      "id": "e17",
+      "name": "ZeroCopy",
+      "type": "component",
+      "description": "Linux splice(2) and sendfile(2) wrappers for zero-copy file-to-fd and file-to-socket paths; no-op on non-Linux"
+    },
+    {
+      "id": "e18",
+      "name": "IoEngine",
+      "type": "component",
+      "description": "Top-level coordinator: send_directory (reader\u2192packer\u2192SenderCommand) and receive_files (data_rx\u2192writer) per transfer session"
+    },
+    {
+      "id": "e19",
+      "name": "AuthEngine",
+      "type": "component",
+      "description": "PBKDF2-HMAC-SHA256 (100k iterations, 32-byte salt) password hashing + HS256 JWT issuance/verification with zero leeway"
+    },
+    {
+      "id": "e20",
+      "name": "SessionManager",
+      "type": "component",
+      "description": "Thread-safe session store (parking_lot RwLock<HashMap>): creates AES-256-GCM key+nonce per session, TTL-based reaper, atomic numeric_id counter"
+    },
+    {
+      "id": "e21",
+      "name": "PolicyEngine",
+      "type": "component",
+      "description": "Bandwidth policy: default max_bps + burst_factor (1.5x), per-user overrides"
+    },
+    {
+      "id": "e22",
+      "name": "ControlService",
+      "type": "component",
+      "description": "tonic gRPC service implementing Authenticate/Heartbeat/Terminate RPCs"
+    },
+    {
+      "id": "e23",
+      "name": "ServerBuilder",
+      "type": "component",
+      "description": "Builds and runs tonic gRPC server: serve_insecure (dev) + serve_tls with rustls TLS 1.3 (production)"
+    },
+    {
+      "id": "e24",
+      "name": "StunClient",
+      "type": "component",
+      "description": "RFC 5389 STUN client: Binding Request/Response, XOR-MAPPED-ADDRESS decode (IPv4+IPv6), discover_public_addr + discover_with_socket"
+    },
+    {
+      "id": "e25",
+      "name": "TurnClient",
+      "type": "component",
+      "description": "RFC 5766 TURN client: two-round-trip Allocate, HMAC-SHA1 MESSAGE-INTEGRITY, MD5 key derivation, CreatePermission, ChannelBind, ChannelData"
+    },
+    {
+      "id": "e26",
+      "name": "IceAgent",
+      "type": "component",
+      "description": "RFC 8445 ICE: CandidateType Host/SrFlx/Relay, priority formula 2^24*type+2^8*local+(256-id), pair formation+sorting, STUN connectivity checks"
+    },
+    {
+      "id": "e27",
+      "name": "HolePuncher",
+      "type": "component",
+      "description": "Orchestrator: socket2 SO_REUSEPORT bind, STUN discovery, ICE checks, TURN relay fallback"
+    },
+    {
+      "id": "e28",
+      "name": "TraversalEngine",
+      "type": "component",
+      "description": "Top-level coordinator: discover_endpoint + connect (returns Arc<UdpSocket> ready for Phase 1 data plane)"
+    }
+  ],
+  "tasks": [
+    {
+      "id": "t1",
+      "description": "Implement crates/protocol: packet.rs, session.rs, congestion.rs, sack.rs, sender.rs, receiver.rs",
+      "status": "completed"
+    },
+    {
+      "id": "t2",
+      "description": "Implement crates/ioengine: reader.rs, writer.rs, packer.rs, zerocopy.rs",
+      "status": "completed"
+    },
+    {
+      "id": "t3",
+      "description": "Implement crates/controlplane: gRPC server, auth, session_mgr",
+      "status": "completed"
+    },
+    {
+      "id": "t4",
+      "description": "Implement crates/traversal: STUN, TURN, ICE, hole punching",
+      "status": "completed"
+    },
+    {
+      "id": "t5",
+      "description": "Project initialization (git, structure, scripts)",
+      "status": "completed"
+    },
+    {
+      "id": "t2_update",
+      "description": "COMPLETED: crates/ioengine \u2014 packer.rs, reader.rs, writer.rs, zerocopy.rs, lib.rs",
+      "status": "completed"
+    },
+    {
+      "id": "t3_done",
+      "description": "COMPLETED: crates/controlplane \u2014 proto/control.proto, build.rs, auth.rs, session_mgr.rs, policy.rs, server.rs",
+      "status": "completed"
+    },
+    {
+      "id": "t4_done",
+      "description": "COMPLETED: crates/traversal \u2014 stun.rs, turn.rs, ice.rs, holepunch.rs, lib.rs",
+      "status": "completed"
+    },
+    {
+      "id": "t5",
+      "description": "Phase 5: CLI tooling, benchmarks, Docker packaging",
+      "status": "completed"
+    },
+    {
+      "id": "t6",
+      "description": "Integration testing: Docker LAN transfer test (testing/docker-compose.yml) — 505 files, 115 MB, SHA-256 verification",
+      "status": "completed"
+    },
+    {
+      "id": "t7",
+      "description": "Bug fix: PackBlock framing — 8-byte LE length prefix on send, reassembly task on receive",
+      "status": "completed"
+    },
+    {
+      "id": "t8",
+      "description": "Bug fix: RUDP Sender stall in direct mode — bypass RUDP machinery, use raw socket loop",
+      "status": "completed"
+    },
+    {
+      "id": "t9",
+      "description": "Bug fix: Split-file reassembly — Packer::unpack_entries() + PartialFile accumulator in AsyncWriter",
+      "status": "completed"
+    },
+    {
+      "id": "t10",
+      "description": "Bug fix: UDP receive buffer overflow — SO_RCVBUF=16MB setsockopt on receiver socket",
+      "status": "completed"
+    },
+    {
+      "id": "t11",
+      "description": "Bug fix: checksums.txt.tmp included in find manifest — add ! -name checksums.txt.tmp to all 4 find patterns in entrypoint-receiver-p1.sh",
+      "status": "completed"
+    }
+  ],
+  "decisions": [
+    {
+      "id": "d1",
+      "description": "Use Rust as sole implementation language",
+      "rationale": "Memory safety, fearless concurrency, zero-cost io_uring abstractions"
+    },
+    {
+      "id": "d2",
+      "description": "Rate-based (not window-based) congestion control",
+      "rationale": "TCP AIMD sawtooth fails on high-BDP WAN; token bucket maintains constant pacing"
+    },
+    {
+      "id": "d3",
+      "description": "Separate control plane (gRPC/TCP) from data plane (UDP)",
+      "rationale": "Allows independent horizontal scaling; control plane stays reliable, data plane stays fast"
+    },
+    {
+      "id": "d4",
+      "description": "Reject QUIC for bulk transfer",
+      "rationale": "QUIC CPU overhead caps at ~5-10 Gbps; custom RUDP gives full rate control"
+    },
+    {
+      "id": "d5",
+      "description": "Pack small files into 16MB virtual blocks",
+      "rationale": "Avoids inode exhaustion and per-file handshake overhead for millions of small files"
+    },
+    {
+      "id": "d6",
+      "description": "22\u201326% packet loss as operational baseline, not edge case",
+      "rationale": "Real WAN conditions on long-haul links; design must perform here, not just tolerate"
+    },
+    {
+      "id": "d7",
+      "description": "Pre-allocated 256-slot receive buffer pool",
+      "rationale": "Zero heap allocations on hot receive path \u2014 critical at high retransmit rates"
+    },
+    {
+      "id": "d8",
+      "description": "Adaptive heartbeat SACK interval (1\u20135 ms based on loss EMA)",
+      "rationale": "At 22% loss fast feedback loop is more important than bandwidth overhead of SACK packets"
+    },
+    {
+      "id": "d9",
+      "description": "Phase 5 complete: unified udpix binary (server/send/receive), criterion benchmarks (rudp encode, sack bitmap, io pack), Dockerfile multi-stage + docker-compose with coturn",
+      "rationale": "Makes UDPix usable end-to-end; Docker enables zero-config deployment"
+    },
+    {
+      "id": "d10",
+      "description": "Direct mode (--direct) bypasses RUDP congestion machinery entirely — raw socket loop at line rate",
+      "rationale": "LAN paths have no loss; RUDP pacing/probe overhead stalls the pipeline; raw loop is simpler and faster for zero-loss paths"
+    },
+    {
+      "id": "d11",
+      "description": "8-byte LE length prefix per PackBlock in direct mode wire format",
+      "rationale": "RUDP delivers 1443-byte fragments, not full blocks; framing is required so receiver can reconstruct block boundaries without RUDP ordering guarantees"
+    },
+    {
+      "id": "d12",
+      "description": "SO_RCVBUF=16MB on receiver UDP socket (kernel clips to net.core.rmem_max)",
+      "rationale": "Default 208KB buffer overflows at 131 MB/s sender burst rate; 4MB rmem_max clip is sufficient for LAN burst absorption"
+    }
+  ],
+  "artifacts": [
+    {
+      "id": "a1",
+      "path": "Research/High-Performance Enterprise Data Transfer Architec *.html",
+      "type": "research_document"
+    },
+    {
+      "id": "a2",
+      "path": "logs/chat-history.md",
+      "type": "conversation_log"
+    },
+    {
+      "id": "a3",
+      "path": "context/chat-context.json",
+      "type": "working_memory"
+    },
+    {
+      "id": "a4",
+      "path": "graph/graph.json",
+      "type": "knowledge_graph"
+    },
+    {
+      "id": "a5",
+      "path": "crates/protocol/src/packet.rs",
+      "type": "source",
+      "notes": "29-byte #[repr(C,packed)] RudpHeader; addr_of! accessors; SYN/FIN/DATA/ACK/NAK/PING/PONG/FEC flags"
+    },
+    {
+      "id": "a6",
+      "path": "crates/protocol/src/session.rs",
+      "type": "source",
+      "notes": "SessionStats (AtomicU64); RFC 6298 RTT; RTO clamped [200ms, 10s]"
+    },
+    {
+      "id": "a7",
+      "path": "crates/protocol/src/sack.rs",
+      "type": "source",
+      "notes": "SackPayload 1024-bit bitmap + SackManager adaptive heartbeat"
+    },
+    {
+      "id": "a8",
+      "path": "crates/protocol/src/congestion.rs",
+      "type": "source",
+      "notes": "TokenBucket + BandwidthProfiler slow-start prober with throttle floor"
+    },
+    {
+      "id": "a9",
+      "path": "crates/protocol/src/sender.rs",
+      "type": "source",
+      "notes": "Async send loop: lock-free retransmit queue, fast retransmit, sendmmsg"
+    },
+    {
+      "id": "a10",
+      "path": "crates/protocol/src/receiver.rs",
+      "type": "source",
+      "notes": "Async recv loop: recvmmsg, pre-alloc buffer pool, SACK heartbeat, PONG echo"
+    },
+    {
+      "id": "a11",
+      "path": "crates/ioengine/src/packer.rs",
+      "type": "source",
+      "notes": "BLOCK_SIZE=16MB; magic=0x55445058; pack_files() + unpack(); large-file part_index/total_parts splitting"
+    },
+    {
+      "id": "a12",
+      "path": "crates/ioengine/src/reader.rs",
+      "type": "source",
+      "notes": "AsyncReader: io_uring read loop on dedicated thread; stream_directory + read_large_file API"
+    },
+    {
+      "id": "a13",
+      "path": "crates/ioengine/src/writer.rs",
+      "type": "source",
+      "notes": "AsyncWriter: io_uring write loop on dedicated thread; receive_and_write drains mpsc channel"
+    },
+    {
+      "id": "a14",
+      "path": "crates/ioengine/src/zerocopy.rs",
+      "type": "source",
+      "notes": "splice_copy + sendfile_to_socket; Linux-only; portable fallback returns Unsupported"
+    },
+    {
+      "id": "a15",
+      "path": "crates/ioengine/src/lib.rs",
+      "type": "source",
+      "notes": "IoEngine coordinator + engine_send_receive_loopback integration test"
+    },
+    {
+      "id": "a16",
+      "path": "crates/controlplane/proto/control.proto",
+      "type": "source",
+      "notes": "gRPC service: Authenticate/Heartbeat/Terminate; AuthResponse carries 32-byte session_key + 12-byte nonce"
+    },
+    {
+      "id": "a17",
+      "path": "crates/controlplane/build.rs",
+      "type": "source",
+      "notes": "tonic_build::compile_protos proto codegen"
+    },
+    {
+      "id": "a18",
+      "path": "crates/controlplane/src/auth.rs",
+      "type": "source",
+      "notes": "PBKDF2 100k iter; JWT HS256; zero-leeway expiry; constant-time password comparison via XOR"
+    },
+    {
+      "id": "a19",
+      "path": "crates/controlplane/src/session_mgr.rs",
+      "type": "source",
+      "notes": "SessionInfo with Zeroizing<[u8;32]> key; UUID v4 session IDs; parking_lot RwLock; reap_expired"
+    },
+    {
+      "id": "a20",
+      "path": "crates/controlplane/src/policy.rs",
+      "type": "source",
+      "notes": "BandwidthPolicy: max_bps + burst_factor; per-user HashMap with default fallback"
+    },
+    {
+      "id": "a21",
+      "path": "crates/controlplane/src/server.rs",
+      "type": "source",
+      "notes": "tonic::async_trait ControlPlane impl; serve_insecure + serve_tls; grpc_authenticate_loopback integration test"
+    },
+    {
+      "id": "a22",
+      "path": "crates/traversal/src/stun.rs",
+      "type": "source",
+      "notes": "MAGIC_COOKIE=0x2112A442; HEADER_LEN=20; XOR-MAPPED-ADDRESS IPv4+IPv6; loopback STUN responder test"
+    },
+    {
+      "id": "a23",
+      "path": "crates/traversal/src/turn.rs",
+      "type": "source",
+      "notes": "TURN msg builder; HMAC-SHA1 via hmac+sha1 crates; MD5 key via md5 crate; 2-round Allocate; ChannelData frame"
+    },
+    {
+      "id": "a24",
+      "path": "crates/traversal/src/ice.rs",
+      "type": "source",
+      "notes": "RFC 8445 priority: Host=126, SrFlx=100, Relay=0; pair sort desc; run_checks \u2192 first Succeeded pair"
+    },
+    {
+      "id": "a25",
+      "path": "crates/traversal/src/holepunch.rs",
+      "type": "source",
+      "notes": "socket2 SO_REUSEADDR+SO_REUSEPORT; punch() \u2192 ICE then TURN fallback; discover() via STUN"
+    },
+    {
+      "id": "a26",
+      "path": "crates/traversal/src/lib.rs",
+      "type": "source",
+      "notes": "TraversalEngine: discover_endpoint + connect; integration tests: discover + connect_loopback"
+    }
+  ],
+  "relationships": [
+    {
+      "from": "e3",
+      "to": "e8",
+      "type": "uses"
+    },
+    {
+      "from": "e3",
+      "to": "e6",
+      "type": "encrypted_by"
+    },
+    {
+      "from": "e4",
+      "to": "e9",
+      "type": "optimizes_for"
+    },
+    {
+      "from": "e5",
+      "to": "e3",
+      "type": "orchestrates"
+    },
+    {
+      "from": "e7",
+      "to": "e3",
+      "type": "enables_p2p_for"
+    },
+    {
+      "from": "e10",
+      "to": "e12",
+      "type": "drives"
+    },
+    {
+      "from": "e11",
+      "to": "e13",
+      "type": "feeds"
+    },
+    {
+      "from": "e3",
+      "to": "e10",
+      "type": "includes"
+    },
+    {
+      "from": "e3",
+      "to": "e11",
+      "type": "includes"
+    },
+    {
+      "from": "e3",
+      "to": "e13",
+      "type": "includes"
+    }
+  ],
+  "last_updated": "2026-05-10",
+  "current_phase": "Phase 1 functional test suite \u2014 12/13 PASS, 1 KNOWN-FAIL (P1-012: sender-before-receiver, documented). Bug #8 fixed (checksums.txt.tmp find regression).",
+  "commit_convention": "All commits must include: Vibecoded by @neerajjez with the help of Claude Code"
+}
